@@ -110,10 +110,16 @@ class BridgeSession:
 
         lang_rule = (
             "⚠️ 중요한 규칙: 모든 답변은 반드시 한국어로만 하십시오. 영어·중국어·기타 언어를 사용하지 마십시오.\n"
-            "⚠️ 도구 호출을 <tool_call>...</tool_call> 태그 형식으로 감싸지 않으면 무시됩니다. "
-            "태그 없는 JSON이나 자연어 설명은 절대 사용하지 마십시오.\n\n"
-        ) if force_korean else ""
-
+            "⚠️ 도구 호출은 반드시 <tool_call>...</tool_call> 형식만 사용하십시오. "
+            "태그 없는 JSON이나 자연어 설명으로 도구를 호출하지 마십시오.\n"
+            "⚠️ 도구 응답(role=tool)의 원시 JSON이나 로그를 사용자에게 절대 그대로 보여주지 마십시오. "
+            "<tool_response>와 같은 임의 태그를 사용하지 마십시오. "
+            "반드시 한국어 한두 문장으로 요약해 답하십시오.\n\n"
+        ) if force_korean else (
+            "⚠️ Do NOT echo raw tool JSON or logs to the user. "
+            "NEVER use <tool_response>; summarize tool outcomes in natural language.\n\n"
+        )
+        
         self.sys_prompt = (
             f"{lang_rule}"
             "You are an AI assistant that can call external MCP tools.\n\n"
@@ -131,7 +137,7 @@ class BridgeSession:
             "Available tools are listed as JSON schemas below (name and parameters only):\n"
             "{{TOOLS_BLOCK}}"
         ).replace("{{TOOLS_BLOCK}}", self.tools_block)
-
+        
         self.messages: List[Dict[str, Any]] = [{"role": "system", "content": self.sys_prompt}]
 
     def reset(self):
