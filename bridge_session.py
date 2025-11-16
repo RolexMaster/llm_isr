@@ -30,21 +30,60 @@ def extract_toolcalls_from_text(text: str) -> List[Dict[str, Any]]:
     """
     모델이 tool_calls를 구조화해 주지 않고,
     텍스트로 <tool_call>{ "name": ..., "arguments": {...} }</tool_call> 를 낸 경우 파싱.
+    정규식 대신 중괄호 밸런싱으로 첫 번째 JSON 블록을 최대한 관대하게 추출한다.
+    - <tool_call>{...}</tool_call> 형태는 물론
+    - <tool_call>{...}<tool_call> 처럼 닫는 태그가 빠져 있어도
+      첫 번째 {...} 블록만 잘라서 파싱을 시도한다.
     """
     out: List[Dict[str, Any]] = []
     if not text:
         return out
-    for m in TOOLCALL_BLOCK.finditer(text):
+
+    # '<tool_call>' 기준으로 잘라서 각 블록에서 JSON 부분을 찾는다.
+    parts = text.split("<tool_call>")
+    if len(parts) <= 1:
+        return out
+
+    for part in parts[1:]:
+        # part 예:
+        #   '{"name": "...", "arguments": {...}}</tool_call> bla bla'
+        #   '{"name": "...", "arguments": {...}}<tool_call>{...}</tool_call>...'
+        # 에서 첫 번째 {...}만 추출
+        brace_start = part.find("{")
+        if brace_start < 0:
+            continue
+
+        depth = 0
+        brace_end = None
+        for idx in range(brace_start, len(part)):
+            ch = part[idx]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    brace_end = idx
+                    break
+
+        if brace_end is None:
+            # 중괄호 균형이 맞지 않으면 스킵
+            continue
+
+        json_str = part[brace_start : brace_end + 1]
+
         try:
-            obj = json.loads(m.group(1))
-            name = obj.get("name")
-            args = obj.get("arguments", {}) or {}
-            if isinstance(name, str) and isinstance(args, dict):
-                out.append({"name": name, "arguments": args})
+            obj = json.loads(json_str)
         except Exception:
-            # 파싱 실패 시 조용히 스킵
-            pass
+            # JSON 파싱 실패 시 스킵
+            continue
+
+        name = obj.get("name")
+        args = obj.get("arguments", {}) or {}
+        if isinstance(name, str) and isinstance(args, dict):
+            out.append({"name": name, "arguments": args})
+
     return out
+
 
 
 def requires_params_wrapper(schema_json: dict) -> bool:
