@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+# =========================
+# 패키지 버전 / 커밋 정보 (pip 설치 버전 확인용)
+# =========================
+# 릴리스할 때마다 __version__ 값을 pyproject.toml / setup.cfg 의 버전과
+# 반드시 동일하게 맞춰주세요.
+__version__ = "0.1.0"
+__commit__ = "dev"  # 필요하면 실제 git short SHA 등으로 교체해서 사용
+
 import json
 import time
 import re
@@ -151,6 +159,10 @@ class BridgeSession:
     - 사용자 입력 1건을 처리(handle_one_turn): 필요 시 MCP 도구를 호출하고, 최종 LLM 출력 문자열을 반환
     - debug=True 일 때는 LLM 각 턴/툴 호출까지 모두 담은 dict 반환
     """
+
+    # 패키지 버전/커밋 정보 노출 (디버깅/버전 확인용)
+    VERSION: str = __version__
+    COMMIT: str = __commit__
 
     def __init__(
         self,
