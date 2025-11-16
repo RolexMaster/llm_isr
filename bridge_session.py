@@ -21,6 +21,7 @@ def pretty_json(obj: Any, limit: int = 1000) -> str:
     return s if len(s) <= limit else s[:limit] + "\n... (truncated)"
 
 
+# (현재는 정규식 블록은 사용하지 않지만, 필요시를 위해 남겨둠)
 TOOLCALL_BLOCK = re.compile(
     r"<tool_call>\s*(\{.*?\})\s*(?:</tool_call>|$)", re.DOTALL
 )
@@ -83,7 +84,6 @@ def extract_toolcalls_from_text(text: str) -> List[Dict[str, Any]]:
             out.append({"name": name, "arguments": args})
 
     return out
-
 
 
 def requires_params_wrapper(schema_json: dict) -> bool:
@@ -177,12 +177,16 @@ class BridgeSession:
 
         if force_korean:
             lang_rule = (
-                "⚠️ 중요한 규칙: 모든 답변은 반드시 한국어로만 하십시오. 영어·중국어·기타 언어를 사용하지 마십시오.\n"
-                "⚠️ 도구 호출은 반드시 <tool_call>...</tool_call> 형식만 사용하십시오. "
-                "태그 없는 JSON이나 자연어 설명으로 도구를 호출하지 마십시오.\n"
-                "⚠️ 도구 응답(role=tool)의 원시 JSON이나 로그를 사용자에게 절대 그대로 보여주지 마십시오. "
-                "<tool_response>와 같은 임의 태그를 사용하지 마십시오. "
-                "반드시 한국어 한두 문장으로 요약해 답하십시오.\n\n"
+                "⚠️ 중요한 규칙(언어): 모든 최종 답변은 반드시 한국어로만 하십시오. "
+                "영어·중국어·러시아어·기타 언어 문장을 출력하지 마십시오.\n"
+                "  - 다른 언어 표현이 떠오르더라도 최종 출력에는 포함하지 말고, 항상 자연스러운 한국어로만 답하십시오.\n"
+                "⚠️ 중요한 규칙(도구 호출 1단계): 사용자의 요청에 대해 도구 호출이 필요하다고 판단되면, "
+                "해당 턴의 assistant 응답은 오직 하나 이상의 <tool_call> 블록으로만 구성되어야 합니다.\n"
+                "  - 이때 자연어 설명, 번역, 생각 정리 문장은 절대 함께 출력하지 마십시오.\n"
+                "⚠️ 중요한 규칙(도구 응답 요약): 도구 호출 후 role=tool 메시지를 받은 다음 턴에서는, "
+                "도구 결과를 바탕으로 한국어로만 요약해서 답하십시오. 이때도 원시 JSON이나 로그를 그대로 노출하지 마십시오.\n"
+                "⚠️ <tool_response>와 같은 임의 태그를 절대 출력하지 마십시오. "
+                "도구 결과는 항상 role=tool 메시지를 통해서만 주어지며, 사용자는 그 내부 형식을 보지 못합니다.\n\n"
             )
         else:
             lang_rule = (
@@ -190,20 +194,48 @@ class BridgeSession:
                 "NEVER use <tool_response>; summarize tool outcomes in natural language.\n\n"
             )
 
+        # 시스템 프롬프트
         self.sys_prompt = (
             f"{lang_rule}"
             "You are an AI assistant that can call external MCP tools.\n\n"
-            "⚠️ Important formatting rules:\n"
+            "⚠️ Important formatting rules for tool calls:\n"
             "1. When you need tools, emit one or more blocks in the following exact format:\n"
-            "<tool_call>{\"name\": \"...\", \"arguments\": {...}}</tool_call>\n"
+            "   <tool_call>{\"name\": \"...\", \"arguments\": {...}}</tool_call>\n"
             "2. Always include both the opening <tool_call> and closing </tool_call> tags.\n"
-            "3. Do not add extra text between <tool_call> blocks.\n"
+            "3. Do not add extra text between <tool_call> blocks (no natural language, no comments).\n"
             "4. Do not include natural language explanation inside tool_call blocks.\n"
             "5. Always use valid JSON inside the block.\n\n"
-            "✅ Correct Example:\n"
+            "✅ Generic correct example:\n"
             "<tool_call>{\"name\": \"eots_set_mode\", \"arguments\": {\"mode\": \"ir\"}}</tool_call>\n"
             "<tool_call>{\"name\": \"eots_pan_tilt\", \"arguments\": {\"pan_deg\": -20, \"tilt_deg\": 5}}</tool_call>\n"
             "<tool_call>{\"name\": \"eots_zoom\", \"arguments\": {\"level\": 8}}</tool_call>\n\n"
+            "✅ Korean command mapping examples (reference only):\n"
+            "사용자: \"EO 카메라 3배 확대\"\n"
+            "Assistant:\n"
+            "<tool_call>{\"name\": \"eots_set_mode\", \"arguments\": {\"mode\": \"eo\"}}</tool_call>\n"
+            "<tool_call>{\"name\": \"eots_zoom\", \"arguments\": {\"level\": 3}}</tool_call>\n\n"
+            "사용자: \"IR 카메라 흑상 전환\"\n"
+            "Assistant:\n"
+            "<tool_call>{\"name\": \"eots_set_mode\", \"arguments\": {\"mode\": \"ir\"}}</tool_call>\n\n"
+            "사용자: \"좌로 20도 회전\"\n"
+            "Assistant:\n"
+            "# 실제 도구 목록에서 팬/틸트 제어에 해당하는 도구 이름을 선택해야 합니다.\n"
+            "# 예시: <tool_call>{\"name\": \"eots_pan_tilt\", \"arguments\": {\"pan_deg\": -20}}</tool_call>\n\n"
+            "사용자: \"방위각 30도로 이동\"\n"
+            "Assistant:\n"
+            "# 실제 도구 목록에서 방위각/헤딩 설정에 해당하는 도구 이름을 선택해야 합니다.\n"
+            "# 예시: <tool_call>{\"name\": \"eots_set_azimuth\", \"arguments\": {\"bearing_deg\": 30}}</tool_call>\n\n"
+            "사용자: \"정지\"\n"
+            "Assistant:\n"
+            "# 실제 도구 목록에서 카메라 정지에 해당하는 도구 이름을 선택해야 합니다.\n"
+            "# 예시: <tool_call>{\"name\": \"eots_stop\", \"arguments\": {}}</tool_call>\n\n"
+            "위 예시에서 사용된 도구 이름(eots_set_mode, eots_zoom, eots_pan_tilt, "
+            "eots_set_azimuth, eots_stop 등)은 참고용입니다. 실제 호출 시에는 아래에 제공되는 "
+            "도구 스키마 목록에서 존재하는 이름을 선택해야 합니다.\n\n"
+            "After you receive tool results (role=tool), you must:\n"
+            "- Summarize what actually happened based ONLY on those tool results.\n"
+            "- NEVER claim that a camera was moved or zoomed if the corresponding tool was not called.\n"
+            "- Answer in Korean only.\n\n"
             "Available tools are listed as JSON schemas below (name and parameters only):\n"
             "{{TOOLS_BLOCK}}"
         ).replace("{{TOOLS_BLOCK}}", self.tools_block)
@@ -275,6 +307,11 @@ class BridgeSession:
 
             # 도구 호출이 없다면 최종 응답으로 종료
             if not calls:
+                # 참고: 여기서 <tool_response>가 섞여 있으면 경고만 남기고 그대로 반환
+                if "<tool_response>" in assistant_text:
+                    self.logger.warning(
+                        "[BRIDGE] LLM emitted forbidden <tool_response> tag in a non-tool_call turn."
+                    )
                 turns_debug.append(turn_info)
                 if debug:
                     return {
@@ -349,7 +386,8 @@ class BridgeSession:
                         self.logger.info(
                             f"[TOOLCALL {i}] MCP result ({dtt:.2f}s):\n{pretty_json(tool_result)}"
                         )
-                        if not tool_result or not tool_result.get("ok", False):
+                        # tool_result 형식 방어: dict 이면서 ok=True 일 때만 성공으로 간주
+                        if not (isinstance(tool_result, dict) and tool_result.get("ok", False)):
                             all_ok = False
                     except Exception as e:
                         tool_result = {"ok": False, "error": str(e)}
