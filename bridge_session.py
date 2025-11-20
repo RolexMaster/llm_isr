@@ -17,6 +17,8 @@ from typing import Dict, Any, List, Tuple
 from openai import OpenAI
 from fastmcp import Client
 
+from agent_prompts import build_system_prompt, AgentLanguage  # 🔹 새로 추가
+
 
 # =========================
 # 로컬 유틸
@@ -78,7 +80,7 @@ def extract_toolcalls_from_text(text: str) -> List[Dict[str, Any]]:
             # 중괄호 균형이 맞지 않으면 스킵
             continue
 
-        json_str = part[brace_start : brace_end + 1]
+        json_str = part[brace_start: brace_end + 1]
 
         try:
             obj = json.loads(json_str)
@@ -173,7 +175,7 @@ class BridgeSession:
         temp: float = 0.2,
         max_tokens: int = 512,
         max_turns: int = 3,
-        force_korean: bool = True,
+        language: AgentLanguage = "en",  # 🔹 Llama 기본 영어 에이전트
     ):
         self.llm = llm
         self.mcp = mcp
@@ -181,76 +183,18 @@ class BridgeSession:
         self.temp = temp
         self.max_tokens = max_tokens
         self.max_turns = max_turns
+        self.language = language
         self.logger = logging.getLogger("mcp_bridge")
 
         # LLM 함수명 <-> MCP 도구명 매핑
         self.f2m, _ = build_name_maps(mcp_tools)
         self.tools_block = build_tools_block(mcp_tools)
 
-        if force_korean:
-            lang_rule = (
-                "⚠️ 중요한 규칙(언어): 모든 최종 답변은 반드시 한국어로만 하십시오. "
-                "영어·중국어·러시아어·기타 언어 문장을 출력하지 마십시오.\n"
-                "  - 다른 언어 표현이 떠오르더라도 최종 출력에는 포함하지 말고, 항상 자연스러운 한국어로만 답하십시오.\n"
-                "⚠️ 중요한 규칙(도구 호출 1단계): 사용자의 요청에 대해 도구 호출이 필요하다고 판단되면, "
-                "해당 턴의 assistant 응답은 오직 하나 이상의 <tool_call> 블록으로만 구성되어야 합니다.\n"
-                "  - 이때 자연어 설명, 번역, 생각 정리 문장은 절대 함께 출력하지 마십시오.\n"
-                "⚠️ 중요한 규칙(도구 응답 요약): 도구 호출 후 role=tool 메시지를 받은 다음 턴에서는, "
-                "도구 결과를 바탕으로 한국어로만 요약해서 답하십시오. 이때도 원시 JSON이나 로그를 그대로 노출하지 마십시오.\n"
-                "⚠️ <tool_response>와 같은 임의 태그를 절대 출력하지 마십시오. "
-                "도구 결과는 항상 role=tool 메시지를 통해서만 주어지며, 사용자는 그 내부 형식을 보지 못합니다.\n\n"
-            )
-        else:
-            lang_rule = (
-                "⚠️ Do NOT echo raw tool JSON or logs to the user. "
-                "NEVER use <tool_response>; summarize tool outcomes in natural language.\n\n"
-            )
-
-        # 시스템 프롬프트
-        self.sys_prompt = (
-            f"{lang_rule}"
-            "You are an AI assistant that can call external MCP tools.\n\n"
-            "⚠️ Important formatting rules for tool calls:\n"
-            "1. When you need tools, emit one or more blocks in the following exact format:\n"
-            "   <tool_call>{\"name\": \"...\", \"arguments\": {...}}</tool_call>\n"
-            "2. Always include both the opening <tool_call> and closing </tool_call> tags.\n"
-            "3. Do not add extra text between <tool_call> blocks (no natural language, no comments).\n"
-            "4. Do not include natural language explanation inside tool_call blocks.\n"
-            "5. Always use valid JSON inside the block.\n\n"
-            "✅ Generic correct example:\n"
-            "<tool_call>{\"name\": \"eots_set_mode\", \"arguments\": {\"mode\": \"ir\"}}</tool_call>\n"
-            "<tool_call>{\"name\": \"eots_pan_tilt\", \"arguments\": {\"pan_deg\": -20, \"tilt_deg\": 5}}</tool_call>\n"
-            "<tool_call>{\"name\": \"eots_zoom\", \"arguments\": {\"level\": 8}}</tool_call>\n\n"
-            "✅ Korean command mapping examples (reference only):\n"
-            "사용자: \"EO 카메라 3배 확대\"\n"
-            "Assistant:\n"
-            "<tool_call>{\"name\": \"eots_set_mode\", \"arguments\": {\"mode\": \"eo\"}}</tool_call>\n"
-            "<tool_call>{\"name\": \"eots_zoom\", \"arguments\": {\"level\": 3}}</tool_call>\n\n"
-            "사용자: \"IR 카메라 흑상 전환\"\n"
-            "Assistant:\n"
-            "<tool_call>{\"name\": \"eots_set_mode\", \"arguments\": {\"mode\": \"ir\"}}</tool_call>\n\n"
-            "사용자: \"좌로 20도 회전\"\n"
-            "Assistant:\n"
-            "# 실제 도구 목록에서 팬/틸트 제어에 해당하는 도구 이름을 선택해야 합니다.\n"
-            "# 예시: <tool_call>{\"name\": \"eots_pan_tilt\", \"arguments\": {\"pan_deg\": -20}}</tool_call>\n\n"
-            "사용자: \"방위각 30도로 이동\"\n"
-            "Assistant:\n"
-            "# 실제 도구 목록에서 방위각/헤딩 설정에 해당하는 도구 이름을 선택해야 합니다.\n"
-            "# 예시: <tool_call>{\"name\": \"eots_set_azimuth\", \"arguments\": {\"bearing_deg\": 30}}</tool_call>\n\n"
-            "사용자: \"정지\"\n"
-            "Assistant:\n"
-            "# 실제 도구 목록에서 카메라 정지에 해당하는 도구 이름을 선택해야 합니다.\n"
-            "# 예시: <tool_call>{\"name\": \"eots_stop\", \"arguments\": {}}</tool_call>\n\n"
-            "위 예시에서 사용된 도구 이름(eots_set_mode, eots_zoom, eots_pan_tilt, "
-            "eots_set_azimuth, eots_stop 등)은 참고용입니다. 실제 호출 시에는 아래에 제공되는 "
-            "도구 스키마 목록에서 존재하는 이름을 선택해야 합니다.\n\n"
-            "After you receive tool results (role=tool), you must:\n"
-            "- Summarize what actually happened based ONLY on those tool results.\n"
-            "- NEVER claim that a camera was moved or zoomed if the corresponding tool was not called.\n"
-            "- Answer in Korean only.\n\n"
-            "Available tools are listed as JSON schemas below (name and parameters only):\n"
-            "{{TOOLS_BLOCK}}"
-        ).replace("{{TOOLS_BLOCK}}", self.tools_block)
+        # 🔹 언어에 맞는 시스템 프롬프트 생성
+        self.sys_prompt = build_system_prompt(
+            language=self.language,
+            tools_block=self.tools_block,
+        )
 
         self.messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.sys_prompt}
