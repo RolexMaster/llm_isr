@@ -172,7 +172,7 @@ class BridgeSession:
         *,
         temp: float = 0.2,
         max_tokens: int = 512,
-        max_turns: int = 8,
+        max_turns: int = 3,
         force_korean: bool = True,
     ):
         self.llm = llm
@@ -435,17 +435,42 @@ class BridgeSession:
             turn_info["tool_results"] = tool_results_turn
             turns_debug.append(turn_info)
 
-            # 모든 MCP 호출 성공/실패 여부에 상관없이 후속 답변 요청
+            # ✅ 모든 도구 호출이 성공한 경우 → 바로 한 번 더 불러서 자연어 요약 후 종료
             if all_ok:
                 self.logger.info(
-                    "[BRIDGE] All tool calls OK; requesting follow-up answer from LLM."
+                    "[BRIDGE] All tool calls OK; requesting final natural-language answer from LLM."
                 )
-                continue
-            else:
+                t2 = time.perf_counter()
+                resp2 = self.llm.chat.completions.create(
+                    model=model,
+                    messages=self.messages,      # 여기에는 이미 role=tool 메시지들이 포함되어 있음
+                    tool_choice="none",
+                    temperature=self.temp,
+                    max_tokens=self.max_tokens,
+                )
+                dt2 = time.perf_counter() - t2
+
+                msg2 = resp2.choices[0].message
                 self.logger.info(
-                    "[BRIDGE] Some tool calls failed; still asking LLM for follow-up."
+                    f"[LLM FINAL] response id: {getattr(resp2, 'id', '<no-id>')} ({dt2:.2f}s), "
+                    f"finish_reason={resp2.choices[0].finish_reason}"
                 )
-                continue
+                self.logger.debug(f"[LLM FINAL] assistant content:\n{msg2.content}")
+
+                final_text = (msg2.content or "").strip()
+
+                if debug:
+                    return {
+                        "final_answer": final_text,
+                        "turns": turns_debug,
+                    }
+                return final_text
+
+            # ❌ 도구 중 일부 실패 → 다음 턴에서 다시 계획 짜도록 한 번 더 LLM 호출
+            self.logger.info(
+                "[BRIDGE] Some tool calls failed; asking LLM for another plan."
+            )
+            continue
 
         # 여기까지 왔다는 것은 self.max_turns 번 돌 때까지
         # '도구 호출 없는 최종 답변'을 못 받았다는 뜻
