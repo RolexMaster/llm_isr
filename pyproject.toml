@@ -15,3 +15,8 @@ authors = [
 
 [project.urls]
 Homepage = "https://github.com/RolexMaster/llm_isr"
+
+
+# ✅ 추가된 부분 (여기가 핵심)
+[tool.setuptools]
+py-modules = ["bridge_session", "agent_prompts"]
