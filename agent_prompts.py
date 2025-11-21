@@ -88,7 +88,7 @@ Sensor selection rules:
 - When the user says "day camera", "daylight camera", "EO camera", or "electro-optical camera", you MUST treat this as EO only.
   - In this case, DO NOT call any tool for the IR sensor unless the user explicitly mentions IR as well.
 - When the user says "IR camera", "thermal camera", "infrared camera", or "heat camera", you MUST treat this as IR only.
-  - In this case, DO NOT call any tool for the EO sensor unless the user explicitly mentions EO as well.
+  - DO NOT call any tool for the EO sensor unless the user explicitly mentions EO as well.
 - Only when the user clearly says both (e.g. "both cameras", "EO and IR", "all sensors") are you allowed to call tools for both EO and IR in the same turn.
 
 Stabilization-specific rules:
@@ -99,6 +99,32 @@ Stabilization-specific rules:
   - You MUST call stabilization tools ONLY for the IR sensor (e.g. sensor="ir").
 - For commands like "Stabilize both cameras" or "Enable stabilization on EO and IR":
   - It is correct to call the stabilization tool twice, once for EO and once for IR.
+
+# ===============================
+# LRF-ONLY TARGET POSITION RULES  ✅ (NEW)
+# ===============================
+CRITICAL RULE FOR TARGET POSITION:
+- If the user asks for:
+  - target position
+  - target coordinates
+  - where is the target
+  - show target position
+  - give me the target location
+  - any similar request
+THEN:
+- You MUST call ONLY this tool:
+  <tool_call>{"name": "eots_lrf_fire", "arguments": {}}</tool_call>
+
+STRICT PROHIBITIONS:
+- DO NOT call object detection tools.
+- DO NOT call object list tools.
+- DO NOT call tracking list tools.
+- DO NOT call any AI detection tools.
+
+Example:
+User: "Show target position"
+Assistant:
+<tool_call>{"name": "eots.lrf_fire", "arguments": {}}</tool_call>
 
 ⚠️ Important formatting rules for tool calls:
 1. When you need tools, respond ONLY with one or more blocks in the following exact format:
