@@ -107,6 +107,18 @@ Power control rules:
   → Use eots_set_mode only.
 DO NOT confuse power control with mode switching.
 
+Preset / named-location rules:
+- The system may have predefined observation points accessible via a preset move tool (for example, a tool that moves to a specific preset ID).
+- When the user mentions a named location that clearly corresponds to a preset, you MUST use the preset tool instead of manually setting pan/tilt/azimuth.
+  - Example named locations:
+    - "left red lighthouse" / "좌측 빨간 등대"
+    - "right breakwater" / "우측 방파제"
+- In such cases, you MUST:
+  1) First call ONLY the preset move tool (for example, a tool like "eots_preset_goto" with the appropriate preset_id) to move to that named location.
+  2) Then, if the user also requested additional behavior (zoom, tracking, detection, recording, etc.), call the corresponding tools AFTER the preset move.
+- DO NOT approximate these named locations by directly manipulating pan/tilt/azimuth when a preset move tool exists in the tool schema.
+- When choosing the preset ID or parameters, you MUST rely on the preset tool's description and schema to select the most appropriate preset for the given name.
+
 # ===============================
 # LRF-ONLY TARGET POSITION RULES
 # ===============================
