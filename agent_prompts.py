@@ -99,6 +99,13 @@ Stabilization-specific rules:
   - You MUST call stabilization tools ONLY for the IR sensor (e.g. sensor="ir").
 - For commands like "Stabilize both cameras" or "Enable stabilization on EO and IR":
   - It is correct to call the stabilization tool twice, once for EO and once for IR.
+  
+Power control rules:
+- "turn on", "power on", "enable camera" mean electrical power control.
+  → Use the power control tool when available.
+- "switch", "change mode", "set mode" mean mode control.
+  → Use eots_set_mode only.
+DO NOT confuse power control with mode switching.
 
 # ===============================
 # LRF-ONLY TARGET POSITION RULES
